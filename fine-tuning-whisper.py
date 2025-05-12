@@ -48,6 +48,7 @@ report_to = "wandb"
 task = "transcribe"
 apply_spec_augment = True
 lang_model = "km"
+seed = 42
 
 # Weights & Biases settings
 run = wandb.init(
@@ -144,7 +145,7 @@ print("Update dataset:", run.config['dataset'])
 
 # -------------------- Split --------------------
 logger.info('⬇️ Splitting dataset')
-dataset = dataset.train_test_split(test_size=0.2)
+dataset = dataset.train_test_split(test_size=0.2, seed=seed)
 train_set = dataset['train']
 validate_set = dataset['test']
 logger.info(f'⏳ Train set: {train_set}')
@@ -231,9 +232,9 @@ logger.info('⬇️ Setting training arguments')
 training_args = Seq2SeqTrainingArguments(
     output_dir=out_dir,
     per_device_train_batch_size=batch_size, 
-    per_device_eval_batch_size=8,
-    gradient_accumulation_steps=2,  
-    learning_rate=lr,
+    per_device_eval_batch_size=batch_size,
+    gradient_accumulation_steps=gradient_accumulation_steps,  
+    learning_rate=learning_rate,
     warmup_steps=1000,
     bf16=True,
     fp16=False,
@@ -243,15 +244,15 @@ training_args = Seq2SeqTrainingArguments(
     save_strategy='epoch',
     predict_with_generate=True,
     generation_max_length=256,
-    report_to="wandb",
+    report_to=report_to,
     load_best_model_at_end=True,
     metric_for_best_model='wer',
     greater_is_better=False,
     dataloader_num_workers=6,
     save_total_limit=None,
     lr_scheduler_type='constant',
-    seed=42,
-    data_seed=42
+    seed=seed,
+    data_seed=seed
 )
 
 trainer = Seq2SeqTrainer(
