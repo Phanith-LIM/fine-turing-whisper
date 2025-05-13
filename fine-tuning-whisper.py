@@ -1,6 +1,4 @@
 import warnings
-warnings.filterwarnings("ignore")
-
 import torch
 import evaluate
 import wandb
@@ -17,7 +15,9 @@ from transformers import (
     EarlyStoppingCallback,
 )
 from huggingface_hub import login
+
 import logging
+warnings.filterwarnings("ignore")
 
 # -------------------- Configuration --------------------
 # Authentication
@@ -212,7 +212,6 @@ model.generation_config.forced_decoder_ids = None
 model.config.apply_spec_augment = apply_spec_augment
 #model.config.activation_dropout = 0.1
 #model.config.dropout = 0.1
-
 
 # -------------------- Compute Metrics --------------------
 logger.info('⬇️ Loading metrics')
