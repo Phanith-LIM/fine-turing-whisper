@@ -3,7 +3,7 @@ import torch
 import evaluate
 import wandb
 from dataclasses import dataclass
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Optional
 from datasets import load_dataset, concatenate_datasets, Audio
 from transformers import (
     WhisperTokenizer,
@@ -43,16 +43,16 @@ class TrainingConfig:
     OUT_DIR:                        str = f"./output/{MODEL_NAME}"
     LANGUAGE:                       str = "Khmer"
     TASK:                           str = "transcribe"
+    REPORT_TO:                      str = "wandb" 
     BATCH_SIZE:                     int = 16
     EPOCHS:                         int = 5
-    SAVE_TOTAL:              int | None = None
     GRADIENT_ACCUMULATION_STEPS:    int = 2
-    SEED:                           int = 42
     LEARNING_RATE:                float = 5e-5
+    SEED:                           int = 42
     APPLY_SPEC_AUGMENT:            bool = True
-    REPORT_TO:                      str = "wandb" 
     BF16:                          bool = True
     FP16:                          bool = False
+    SAVE_TOTAL:           Optional[int] = None
 
 # Weights & Biases settings
 run = wandb.init(

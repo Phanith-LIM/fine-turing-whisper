@@ -14,7 +14,7 @@ from prettytable import PrettyTable
 from tha.decimals import processor
 from khmerspell import khnormal
 from dataclasses import dataclass
-from typing import List
+from typing import List,
 
 
 # -------------------- Authentication --------------------
@@ -27,10 +27,10 @@ login(token=userdata.get('hg-main'))
 # -------------------- Config --------------------
 @dataclass(frozen=True)
 class Config:
-    DATASET_NAME:       str = 'PhanithLIM/gfleurs-evaluation'
-    SPLIT:              str = 'test'
-    AUDIO_COLUMN:      str = 'audio'
-    TEXT_COLUMN:       str = 'text'
+    DATASET_NAME:            str = 'PhanithLIM/gfleurs-evaluation'
+    SPLIT:                   str = 'test'
+    AUDIO_COLUMN:            str = 'audio'
+    TEXT_COLUMN:             str = 'text'
     EXCLUDE_SYMBOLS:   List[str] = [
         '(', ')', '[', ']', '{', '}', '<', '>',
         '“', '”', '‘', '’', '«', '»', ',', '?',
@@ -61,13 +61,13 @@ def convert_num2text(example):
     return example
 
 def filter_english_rows(example):
-    for col, value in example.items():
+    for _, value in example.items():
         if isinstance(value, str) and bool(re.search(r'[a-zA-Z]', value)):
             return False
     return True
 
 def is_nonempty_row(example):
-    for col, value in example.items():
+    for _, value in example.items():
         if isinstance(value, str) and value.strip():
             return True
     return False

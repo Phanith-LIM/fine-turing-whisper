@@ -6,6 +6,7 @@ from datasets import load_dataset, Audio
 from transformers import WhisperForConditionalGeneration, WhisperProcessor, pipeline
 import torch
 from dataclasses import dataclass
+from typing import Optional
 
 
 # -------------------- Authentication --------------------
@@ -27,8 +28,8 @@ class Config:
     COLUMN_NAMES:          str = MODEL_NAME.split("/")[-1]
     SPLIT:                 str = "test"
     DEVICE:                str = "cuda" if torch.cuda.is_available() else "cpu"
-    MAX_LENGTH:     int | None = 2024
-    NUM_BEAMS:      int | None = 5
+    MAX_LENGTH:  Optional[int] = 2024
+    NUM_BEAMS:   Optional[int] = 5
     SAMPLING_RATE:         int = 16_000
 
 # -------------------- Load Model and Processor --------------------
