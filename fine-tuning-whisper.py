@@ -36,31 +36,35 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Training Settings
-base_model = "openai/whisper-base"
-model_name = "whisper-base-aug-10-may-lightning-v1"
-out_dir = f"./output/{model_name}"
-language = "Khmer"
-epochs = 10
-batch_size = 16
-learning_rate = 3e-5
-gradient_accumulation_steps = 2
-report_to = "wandb"
-task = "transcribe"
-apply_spec_augment = True
-lang_model = "km"
-seed = 42
+@dataclass(frozen=True)
+class TrainingConfig:
+    MODEL_ID:                       str = 'openai/whisper-base'
+    MODEL_NAME:                     str = 'whisper-base-aug-10-may-lightning-v1'
+    OUT_DIR:                        str = f"./output/{MODEL_NAME}"
+    LANGUAGE:                       str = "Khmer"
+    TASK:                           str = "transcribe"
+    BATCH_SIZE:                     int = 16
+    EPOCHS:                         int = 5
+    SAVE_TOTAL:              int | None = None
+    GRADIENT_ACCUMULATION_STEPS:    int = 2
+    SEED:                           int = 42
+    LEARNING_RATE:                float = 5e-5
+    APPLY_SPEC_AUGMENT:            bool = True
+    REPORT_TO:                      str = "wandb" 
+    BF16:                          bool = True
+    FP16:                          bool = False
 
 # Weights & Biases settings
 run = wandb.init(
     entity="KAK-AI",
     project="Experiment-Khmer-Whisper",
-    name=model_name,
+    name=TrainingConfig.MODEL_NAME,
     config={
-        "learning_rate": learning_rate,
-        "model": base_model,
-        "epochs": epochs,
-        "lang": language,
-        "batch_size": batch_size,
+        "learning_rate": TrainingConfig.LEARNING_RATE,
+        "model": TrainingConfig.MODEL_ID,
+        "epochs": TrainingConfig.EPOCHS,
+        "lang": TrainingConfig.LANGUAGE,
+        "batch_size": TrainingConfig.BATCH_SIZE,
         "dataset": [],
         "total_num": 0,
         "total_hour": "0",
@@ -145,7 +149,7 @@ print("Update dataset:", run.config['dataset'])
 
 # -------------------- Split --------------------
 logger.info('⬇️ Splitting dataset')
-dataset = dataset.train_test_split(test_size=0.2, seed=seed)
+dataset = dataset.train_test_split(test_size=0.2, seed=TrainingConfig.SEED, shuffle=True)
 train_set = dataset['train']
 validate_set = dataset['test']
 logger.info(f'⏳ Train set: {train_set}')
@@ -161,8 +165,8 @@ run.config.update({
 
 # -------------------- Load Tokenizer and Feature Extraction --------------------
 logger.info('⬇️ Loading tokenizer and feature extractor')
-feature_extractor = WhisperFeatureExtractor.from_pretrained(base_model)
-tokenizer = WhisperTokenizer.from_pretrained(model_name, language=language, task=task)
+feature_extractor = WhisperFeatureExtractor.from_pretrained(TrainingConfig.MODEL_ID)
+tokenizer = WhisperTokenizer.from_pretrained(TrainingConfig.MODEL_ID, language=TrainingConfig.LANGUAGE, task=TrainingConfig.TASK)
 
 def prepare_dataset(batch):
     batch['text'] = [text.replace('​', '') for text in batch['text']]
@@ -205,11 +209,11 @@ class DataCollatorSpeechSeq2SeqWithPadding:
     
 # -------------------- Load Model --------------------
 logger.info('⬇️ Loading model')
-processor = WhisperProcessor.from_pretrained(model_name, language=language, task=task)
-model = WhisperForConditionalGeneration.from_pretrained(model_name)
-model.generation_config.task = task
+processor = WhisperProcessor.from_pretrained(TrainingConfig.MODEL_ID, language=TrainingConfig.LANGUAGE, task=TrainingConfig.TASK)
+model = WhisperForConditionalGeneration.from_pretrained(TrainingConfig.MODEL_ID,)
+model.generation_config.task = TrainingConfig.TASK
 model.generation_config.forced_decoder_ids = None
-model.config.apply_spec_augment = apply_spec_augment
+model.config.apply_spec_augment = TrainingConfig.APPLY_SPEC_AUGMENT
 #model.config.activation_dropout = 0.1
 #model.config.dropout = 0.1
 
@@ -229,29 +233,29 @@ def compute_metrics(pred):
 # -------------------- Training Arguments --------------------
 logger.info('⬇️ Setting training arguments')
 training_args = Seq2SeqTrainingArguments(
-    output_dir=out_dir,
-    per_device_train_batch_size=batch_size, 
-    per_device_eval_batch_size=batch_size,
-    gradient_accumulation_steps=gradient_accumulation_steps,  
-    learning_rate=learning_rate,
+    output_dir=TrainingConfig.OUT_DIR,
+    per_device_train_batch_size=TrainingConfig.BATCH_SIZE,
+    per_device_eval_batch_size=TrainingConfig.BATCH_SIZE,
+    gradient_accumulation_steps=TrainingConfig.GRADIENT_ACCUMULATION_STEPS,
+    learning_rate= TrainingConfig.LEARNING_RATE,
     warmup_steps=1000,
-    bf16=True,
-    fp16=False,
-    num_train_epochs=epochs,
+    bf16=TrainingConfig.BF16,
+    fp16=TrainingConfig.FP16,
+    num_train_epochs=TrainingConfig.EPOCHS,
     eval_strategy='epoch',
     logging_strategy='epoch',
     save_strategy='epoch',
     predict_with_generate=True,
     generation_max_length=256,
-    report_to=report_to,
+    report_to=TrainingConfig.REPORT_TO,
     load_best_model_at_end=True,
     metric_for_best_model='wer',
     greater_is_better=False,
     dataloader_num_workers=6,
-    save_total_limit=None,
+    save_total_limit=TrainingConfig.SAVE_TOTAL,
     lr_scheduler_type='constant',
-    seed=seed,
-    data_seed=seed
+    seed=TrainingConfig.SEED,
+    data_seed=TrainingConfig.SEED,
 )
 
 trainer = Seq2SeqTrainer(
@@ -273,12 +277,8 @@ trainer = Seq2SeqTrainer(
 logger.info('⬇️ Training model')
 trainer.train()
 
-logger.info('⬇️ Saving model')
-trainer.save_model(out_dir)
-
 logger.info('⬇️ Saving processor')
-processor.save_pretrained(out_dir)
-
+processor.save_pretrained(TrainingConfig.OUT_DIR)
 
 logger.info('⬇️ Finalizing WandB')
 run.finish()

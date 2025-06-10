@@ -4,14 +4,17 @@
 '''
 
 import numpy as np
+import re
+
 from datasets import load_dataset, Audio
 from Levenshtein import distance
 from tqdm import tqdm
 from IPython.display import Audio as IPAudio
 from prettytable import PrettyTable
-import re
 from tha.decimals import processor
 from khmerspell import khnormal
+from dataclasses import dataclass
+from typing import List
 
 
 # -------------------- Authentication --------------------
@@ -20,18 +23,28 @@ from google.colab import userdata
 
 login(token=userdata.get('hg-main'))
 
-# -------------------- Load Dataset --------------------
-dataset = load_dataset('PhanithLIM/gfleurs-evaluation', split='test')
-print(dataset)
 
-# -------------------- Preprocess Dataset --------------------
-def remove_symbols(example):
-    symbols_to_remove = [
+# -------------------- Config --------------------
+@dataclass(frozen=True)
+class Config:
+    DATASET_NAME:       str = 'PhanithLIM/gfleurs-evaluation'
+    SPLIT:              str = 'test'
+    AUDIO_COLUMN:      str = 'audio'
+    TEXT_COLUMN:       str = 'text'
+    EXCLUDE_SYMBOLS:   List[str] = [
         '(', ')', '[', ']', '{', '}', '<', '>',
         '“', '”', '‘', '’', '«', '»', ',', '?',
         '「', '」', '『', '』', '▁', '-', ' ', "%", '.',
         '៖', '។', '៛', '៕', '!', '​', '–', 'ៗ', '�', ''
     ]
+
+# -------------------- Load Dataset --------------------
+dataset = load_dataset(Config.DATASET_NAME, split=Config.SPLIT)
+print(dataset)
+
+# -------------------- Preprocess Dataset --------------------
+def remove_symbols(example):
+    symbols_to_remove = Config.EXCLUDE_SYMBOLS
     for col, value in example.items():
         if isinstance(value, str):  # Ensure the value is a string before processing
             for symbol in symbols_to_remove:
@@ -67,11 +80,11 @@ def filter_long_audio(example):
 
 # ----------------- Filter Long Audio --------------------
 
-dataset2 = dataset.filter(filter_long_audio)
-dataset2 = dataset2.map(convert_num2text)
-dataset2 = dataset2.map(remove_symbols)
-dataset2 = dataset2.filter(filter_english_rows)
-dataset2 = dataset2.filter(is_nonempty_row)
+clean_dataset = dataset.filter(filter_long_audio)
+clean_dataset = clean_dataset.map(convert_num2text)
+clean_dataset = clean_dataset.map(remove_symbols)
+clean_dataset = clean_dataset.filter(filter_english_rows)
+clean_dataset = clean_dataset.filter(is_nonempty_row)
 
 
 # ----------------- Calculate CER --------------------
@@ -80,17 +93,17 @@ pt.field_names = ['model', 'cer (%)']
 pt.align['model'] = 'l'
 pt.align['cer (%)'] = 'l'
 
-ref_col = 'text'
-columns_kept = [col for col in dataset2.column_names if col != 'audio' and col != ref_col]
-columns_kept.insert(0, ref_col)
+
+columns_kept = [col for col in clean_dataset.column_names if col != Config.AUDIO_COLUMN and col != Config.TEXT_COLUMN]
+columns_kept.insert(0, Config.TEXT_COLUMN)
 
 # Loop over each model column (skip the reference column)
 for col in columns_kept[1:]:
     count_chars = 0
     count_errors = 0
 
-    for example in dataset2:
-        ref_text = khnormal(str(example[ref_col]))
+    for example in clean_dataset:
+        ref_text = khnormal(str(example[Config.TEXT_COLUMN]))
         hyp_text = khnormal(str(example[col]))
         if not ref_text.strip() or not hyp_text.strip():
             continue
