@@ -1,119 +1,60 @@
-
 '''
-!pip install python-Levenshtein tha datasets khmerspell
+!pip install datasets
 '''
-
-import numpy as np
-import re
 
 from datasets import load_dataset, Audio
-from Levenshtein import distance
-from tqdm import tqdm
-from IPython.display import Audio as IPAudio
-from prettytable import PrettyTable
-from tha.decimals import processor
-from khmerspell import khnormal
+from transformers import WhisperForConditionalGeneration, WhisperProcessor, pipeline
+import torch
 from dataclasses import dataclass
-from typing import List,
+from typing import Optional
 
 
 # -------------------- Authentication --------------------
 from huggingface_hub import login
-from google.colab import userdata
+from kaggle_secrets import UserSecretsClient
 
-login(token=userdata.get('hg-main'))
-
+user_secrets = UserSecretsClient()
+hg_key = user_secrets.get_secret("hg-main")
+login(token=hg_key, add_to_git_credential=False)
 
 # -------------------- Config --------------------
 @dataclass(frozen=True)
 class Config:
-    DATASET_NAME:            str = 'PhanithLIM/gfleurs-evaluation'
-    SPLIT:                   str = 'test'
-    AUDIO_COLUMN:            str = 'audio'
-    TEXT_COLUMN:             str = 'text'
-    EXCLUDE_SYMBOLS:   List[str] = [
-        '(', ')', '[', ']', '{', '}', '<', '>',
-        '“', '”', '‘', '’', '«', '»', ',', '?',
-        '「', '」', '『', '』', '▁', '-', ' ', "%", '.',
-        '៖', '។', '៛', '៕', '!', '​', '–', 'ៗ', '�', ''
-    ]
+    MODEL_NAME:            str = "PhanithLIM/whisper-medium-aug-05-june"
+    PROCESSOR_NAME:        str = "PhanithLIM/whisper-medium-aug-05-june"
+    TASK:                  str = "transcribe"
+    LANGUAGE:              str = "Khmer"
+    DATASET_NAME:          str = "PhanithLIM/asr-wmc-evaluate"
+    COLUMN_NAMES:          str = MODEL_NAME.split("/")[-1]
+    SPLIT:                 str = "test"
+    DEVICE:                str = "cuda" if torch.cuda.is_available() else "cpu"
+    MAX_LENGTH:  Optional[int] = 2024
+    NUM_BEAMS:   Optional[int] = 5
+    SAMPLING_RATE:         int = 16_000
 
-# -------------------- Load Dataset --------------------
+# -------------------- Load Model and Processor --------------------
 dataset = load_dataset(Config.DATASET_NAME, split=Config.SPLIT)
+dataset = dataset.cast_column("audio", Audio(sampling_rate=Config.SAMPLING_RATE))
 print(dataset)
 
-# -------------------- Preprocess Dataset --------------------
-def remove_symbols(example):
-    symbols_to_remove = Config.EXCLUDE_SYMBOLS
-    for col, value in example.items():
-        if isinstance(value, str):  # Ensure the value is a string before processing
-            for symbol in symbols_to_remove:
-                value = value.replace(symbol, '')
-            example[col] = value
-    return example
 
-def convert_num2text(example):
-    for col, value in example.items():
-        if isinstance(value, str):  # Ensure the value is a string before applying regex
-            value = re.sub(r'[0-9,]+(?:\.[0-9,]+)?', lambda match: processor(match.group(0)), value)
-            value = re.sub(r'[០-៩,]+(?:\.[០-៩,]+)?', lambda match: processor(match.group(0)), value)
-            example[col] = value.replace('▁', ' ')
-    return example
+# -------------------- Load Model and Processor --------------------
 
-def filter_english_rows(example):
-    for _, value in example.items():
-        if isinstance(value, str) and bool(re.search(r'[a-zA-Z]', value)):
-            return False
-    return True
+model = WhisperForConditionalGeneration.from_pretrained(Config.MODEL_NAME)
+model.to(Config.DEVICE)
+processor = WhisperProcessor.from_pretrained(Config.PROCESSOR_NAME, language=Config.LANGUAGE, task=Config.TASK)
 
-def is_nonempty_row(example):
-    for _, value in example.items():
-        if isinstance(value, str) and value.strip():
-            return True
-    return False
-
-def filter_long_audio(example):
-    audio_array = example["audio"]["array"]
-    sampling_rate = example["audio"]["sampling_rate"]
-    duration = len(audio_array) / sampling_rate
-    return duration <= 30  # keep if less than 30 sec
-
-# ----------------- Filter Long Audio --------------------
-
-clean_dataset = dataset.filter(filter_long_audio)
-clean_dataset = clean_dataset.map(convert_num2text)
-clean_dataset = clean_dataset.map(remove_symbols)
-clean_dataset = clean_dataset.filter(filter_english_rows)
-clean_dataset = clean_dataset.filter(is_nonempty_row)
+# -------------------- Pipeline --------------------
+def map_to_pred(batch):
+    audio = batch["audio"]
+    input_features = processor(audio["array"], sampling_rate=audio["sampling_rate"], return_tensors="pt").input_features
+    with torch.no_grad():
+        predicted_ids = model.generate(input_features.to(Config.DEVICE), language=Config.LANGUAGE, max_length=Config.MAX_LENGTH, num_beams=Config.NUM_BEAMS)[0]
+    transcription = processor.decode(predicted_ids, skip_special_tokens=True)
+    batch[f"{Config.COLUMN_NAMES}"] = transcription
+    return batch
 
 
-# ----------------- Calculate CER --------------------
-pt = PrettyTable()
-pt.field_names = ['model', 'cer (%)']
-pt.align['model'] = 'l'
-pt.align['cer (%)'] = 'l'
-
-
-columns_kept = [col for col in clean_dataset.column_names if col != Config.AUDIO_COLUMN and col != Config.TEXT_COLUMN]
-columns_kept.insert(0, Config.TEXT_COLUMN)
-
-# Loop over each model column (skip the reference column)
-for col in columns_kept[1:]:
-    count_chars = 0
-    count_errors = 0
-
-    for example in clean_dataset:
-        ref_text = khnormal(str(example[Config.TEXT_COLUMN]))
-        hyp_text = khnormal(str(example[col]))
-        if not ref_text.strip() or not hyp_text.strip():
-            continue
-        err = distance(ref_text, hyp_text)
-        if err < 100:
-            count_chars += len(ref_text)
-            count_errors += err
-
-    cer = (count_errors / count_chars) * 100 if count_chars > 0 else 0
-    pt.add_row([col, f"{cer:.3f}"])
-# Print the results table
-print('Model Performance on Khmer Test Set')
-print(pt)
+result = dataset.map(map_to_pred)
+result.push_to_hub(Config.DATASET_NAME, split='test')
+print("Results pushed to the hub successfully.")

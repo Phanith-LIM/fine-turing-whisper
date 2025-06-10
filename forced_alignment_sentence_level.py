@@ -124,7 +124,6 @@ def align_audio_to_text(audio_path: str, transcript_path: str, output_dir: str):
 
 
 if __name__ == "__main__":
-    # Customize these paths as needed
     AUDIO_PATH = 'data/audio.wav'
     TRANSCRIPT_PATH = 'data/transcript.txt'
     OUTPUT_DIR = 'data/output'
